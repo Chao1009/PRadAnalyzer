@@ -80,6 +80,11 @@ PRadEventViewer::PRadEventViewer()
   hycal_sys(new PRadHyCalSystem()),
   gem_sys(new PRadGEMSystem())
 {
+    prad_root = getenv("PRAD_PATH");
+    if(prad_root.size() && prad_root.back() != '/') {
+        prad_root += "/";
+    }
+
     // build connections
     handler->SetEPICSystem(epic_sys);
     handler->SetTaggerSystem(tagger_sys);
@@ -117,10 +122,10 @@ void PRadEventViewer::initView()
     generateScalerBoxes();
     generateSpectrum();
 
-    epic_sys->ReadMap("config/epics_channels.conf");
+    epic_sys->ReadMap(prad_root + "config/epics_channels.conf");
     hycal_sys->SetDetector(HyCal);
-    hycal_sys->Configure("config/hycal.conf");
-    gem_sys->Configure("config/gem.conf");
+    hycal_sys->Configure(prad_root + "config/hycal.conf");
+    gem_sys->Configure(prad_root + "config/gem.conf");
 
     // TDC Group Box
     setTDCGroupBox();
@@ -156,12 +161,6 @@ void PRadEventViewer::initView()
 void PRadEventViewer::setupUI()
 {
     setWindowTitle(tr("PRad Event Viewer"));
-    QDesktopWidget dw;
-    double height = dw.height();
-    double width = dw.width();
-    double scale = (width/height > (16./9.))? 0.8 : 0.8 * ((width/height)/(16/9.));
-    view->scale((height*scale)/1440, (height*scale)/1440);
-    resize(height*scale*16./9., height*scale);
 
     createMainMenu();
     createStatusBar();
@@ -567,11 +566,12 @@ void PRadEventViewer::Refresh()
         break;
     case EnergyView:
 #ifdef RECON_DISPLAY
-        if(clusterSpin->value() > 0)
-            HyCal->ShowCluster(clusterSpin->value() - 1);
+        if(clusterSpin->value() > 0) {
+            HyCal->ShowCluster(hycal_sys->GetClusterMethod()->GetClusters().at(clusterSpin->value() - 1));
+        }
         else
 #endif
-        HyCal->ModuleAction(&HyCalModule::ShowEnergy);
+        { HyCal->ModuleAction(&HyCalModule::ShowEnergy); }
         break;
     case CustomView:
         HyCal->ModuleAction(&HyCalModule::ShowCustomValue);
@@ -696,7 +696,7 @@ void PRadEventViewer::initializeFromFile()
 // open calibration factor file
 void PRadEventViewer::openCalibrationFile()
 {
-    QString dir = QDir::currentPath() + "/config";
+    QString dir = QString::fromStdString(prad_root + "database");
 
     QStringList filters;
     filters << "Data files (*.dat *.txt)"
@@ -711,7 +711,7 @@ void PRadEventViewer::openCalibrationFile()
 
 void PRadEventViewer::openGainFactorFile()
 {
-    QString dir = QDir::currentPath() + "/database";
+    QString dir = QString::fromStdString(prad_root + "database");
 
     QStringList filters;
     filters << "Data files (*.dat *.txt)"
@@ -813,6 +813,17 @@ void PRadEventViewer::eraseBufferAction()
         eraseData();
 }
 
+void PRadEventViewer::AutoScale()
+{
+    QDesktopWidget dw;
+    double height = dw.height();
+    double width = dw.width();
+    double scale = (width/height > (16./9.))? 0.8 : 0.8 * ((width/height)/(16/9.));
+    view->scale((height*scale)/1440, (height*scale)/1440);
+    resize(height*scale*16./9., height*scale);
+    view->centerOn(QPointF(CARTESIAN_TO_HYCALSCENE(0., 0.)));
+}
+
 void PRadEventViewer::UpdateStatusBar(ViewerStatus mode)
 {
     QString statusText;
@@ -851,13 +862,11 @@ void PRadEventViewer::handleEventChange(int evt)
 
         // clear cluster selection range
         clusterSpin->setRange(0, 0);
+        // clear previous reconstructed events
+        HyCal->ClearHitsMarks();
 
-        if(reconSetting->IsEnabled()) {
-            // clear previous reconstructed events
-            HyCal->ClearHitsMarks();
-
-            if(event.is_physics_event())
-                showReconEvent();
+        if(reconSetting->IsEnabled() && event.is_physics_event()) {
+            showReconEvent();
         }
 #endif
 
@@ -1249,6 +1258,9 @@ void PRadEventViewer::takeSnapShot()
 #endif
 
     // using date time as file name
+    if(!QDir("snapshots").exists())
+        QDir().mkdir("snapshots");
+
     QString datetime = tr("snapshots/") + QDateTime::currentDateTime().toString();
     datetime.replace(QRegExp("\\s+"), "_");
 
@@ -1264,10 +1276,12 @@ void PRadEventViewer::takeSnapShot()
         filepath = datetime + tr("_") + QString::number(i) + tr(".png");
     }
 
-    p.save(filepath);
-
-    // update info
-    rStatusLabel->setText(tr("Snap shot saved to ") + filepath);
+    if(p.save(filepath)) {
+        // update info
+        rStatusLabel->setText(tr("Snapshot saved to ") + filepath);
+    } else {
+        rStatusLabel->setText(tr("Failed to save snapshot to ") + filepath);
+    }
 }
 
 void PRadEventViewer::editCustomValueLabel(QTreeWidgetItem* item, int column)
@@ -1291,8 +1305,8 @@ void PRadEventViewer::handleRootEvents()
 void PRadEventViewer::setupReconDisplay()
 {
     // add hycal clustering methods
-    coordSystem = new PRadCoordSystem("database/coordinates.dat");
-    detMatch = new PRadDetMatch("config/det_match.conf");
+    coordSystem = new PRadCoordSystem(prad_root + "database/coordinates.dat");
+    detMatch = new PRadDetMatch(prad_root + "config/det_match.conf");
 
     reconSetting = new ReconSettingPanel(this);
     reconSetting->ConnectHyCalSystem(hycal_sys);
@@ -1346,9 +1360,9 @@ void PRadEventViewer::showReconEvent()
     auto &gem2_hit = gem2->GetHits();
 
     // coordinates transform, projection
-    coordSystem->Transform(HyCal->GetDetID(), hycal_hit.begin(), hycal_hit.end());
-    coordSystem->Transform(gem1->GetDetID(), gem1_hit.begin(), gem1_hit.end());
-    coordSystem->Transform(gem2->GetDetID(), gem2_hit.begin(), gem2_hit.end());
+    coordSystem->TransformHits(HyCal);
+    coordSystem->TransformHits(gem1);
+    coordSystem->TransformHits(gem2);
 
     coordSystem->Projection(hycal_hit.begin(), hycal_hit.end());
     coordSystem->Projection(gem1_hit.begin(), gem1_hit.end());
@@ -1384,7 +1398,7 @@ void PRadEventViewer::showReconEvent()
         if(reconSetting->ShowMatchedDetector(PRadDetector::PRadGEM1)) {
             for(auto &m : matched)
             {
-                if(TEST_BIT(m.hycal.flag, kGEM1Match)) {
+                if(TEST_BIT(m.mflag, kGEM1Match)) {
                     QPointF p(CARTESIAN_TO_HYCALSCENE(m.gem1.front().x, m.gem1.front().y));
                     HyCal->AddHitsMark("GEM1 Hit", p, attr);
                 }
@@ -1405,7 +1419,7 @@ void PRadEventViewer::showReconEvent()
         if(reconSetting->ShowMatchedDetector(PRadDetector::PRadGEM2)) {
             for(auto &m : matched)
             {
-                if(TEST_BIT(m.hycal.flag, kGEM2Match)) {
+                if(TEST_BIT(m.mflag, kGEM2Match)) {
                     QPointF p(CARTESIAN_TO_HYCALSCENE(m.gem2.front().x, m.gem2.front().y));
                     HyCal->AddHitsMark("GEM2 Hit", p, attr);
                 }
@@ -1420,7 +1434,10 @@ void PRadEventViewer::showReconEvent()
     }
 
     // update the cluster size
-    clusterSpin->setRange(0, HyCal->GetModuleClusters().size());
+    int mcl = 0;
+    auto cl_method = hycal_sys->GetClusterMethod();
+    if(cl_method) mcl = cl_method->GetClusters().size();
+    clusterSpin->setRange(0, mcl);
 }
 
 #endif

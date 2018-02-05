@@ -7,6 +7,7 @@
 //============================================================================//
 
 #include "physCalib.h"
+#include "ConfigOption.h"
 #include "TSystem.h"
 #include "TMath.h"
 #include "TVector2.h"
@@ -15,49 +16,49 @@
 #include <cmath>
 #include <iomanip>
 
-void Helper()
-{
-    cout << "usage: physCalib <options> <begin_run> <end_run>" << endl
-         << "options:" << endl
-         << setw(10) << "-i " << "<input_file_dir>" << endl
-         << setw(10) << "-o " << "<output_file_dir>" << endl
-         << setw(10) << "-h " << "<show_options>" << endl
-         << endl;
-    exit(1);
-}
-
 int main(int argc, char * argv [])
 {
+    ConfigOption conf_opt;
+    conf_opt.AddOpt(ConfigOption::arg_require, 'i');
+    conf_opt.AddOpt(ConfigOption::arg_require, 'o');
+    conf_opt.AddOpt(ConfigOption::help_message, 'h');
+
+    conf_opt.SetDesc("usage: physCalib <options> <begin_run> <end_run>");
+    conf_opt.SetDesc('i', "input file directory");
+    conf_opt.SetDesc('o', "output file directory");
+    conf_opt.SetDesc('h', "show instruction");
+
     // determine input files
-    int run[2], run_arg;
+    int run[2];
     run[0] = 0;
     run[1] = 999999;
-    run_arg = 0;
     string in_dir = "./"; //define your dst data file folder here
     string out_dir = "./";
 
-    for(int i = 1; i < argc; ++i)
+    if(!conf_opt.ParseArgs(argc, argv) || conf_opt.NbofArgs() != 2) {
+        std::cout << conf_opt.GetInstruction() << std::endl;
+        return -1;
+    }
+
+    for(auto &opt : conf_opt.GetOptions())
     {
-        char* ptr = argv[i];
-        if(*(ptr++) == '-') {
-            switch(*(ptr++))
-            {
-            case 'o':
-                out_dir = argv[++i];
-                break;
-            case 'i':
-                in_dir = argv[++i];
-                break;
-            case 'h':
-            default:
-                Helper();
-            }
-        } else {
-            if(run_arg > 1)
-                Helper();
-            run[run_arg] = atoi(argv[i]);
-            run_arg++;
+        switch(opt.mark)
+        {
+        case 'o':
+            out_dir = opt.var.String();
+            break;
+        case 'i':
+            in_dir = opt.var.String();
+            break;
+        default:
+            std::cout << conf_opt.GetInstruction() << std::endl;
+            return -1;
         }
+    }
+
+    for(int i = 0; i < 2; ++i)
+    {
+        run[i] = conf_opt.GetArgument(i).Int();
     }
 
     auto inputFiles = FindInputFiles(in_dir, run[0], run[1]);
@@ -76,7 +77,6 @@ int main(int argc, char * argv [])
     det_match = new PRadDetMatch("config/det_match.conf");
     dst_parser = new PRadDSTParser();
 
-    dst_parser->SetMode(0);
     hycal = hycal_sys->GetDetector();
     gem1 = gem_sys->GetDetector("PRadGEM1");
     gem2 = gem_sys->GetDetector("PRadGEM2");
@@ -187,7 +187,7 @@ int main(int argc, char * argv [])
                 delete [] myhits;
             }
             else if(dst_parser->EventType() == PRadDSTParser::Type::epics) {
-                const auto &epics_ev = dst_parser->GetEPICSEvent();
+                auto epics_ev = dst_parser->GetEPICS();
 	            // save epics into handler, otherwise get epicsvalue won't work
 	            epics->AddEvent(epics_ev);
                 // only update beam energy when there is an epics event

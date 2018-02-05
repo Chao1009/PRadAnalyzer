@@ -10,6 +10,7 @@
 #include "HyCalScene.h"
 #include "PRadEventViewer.h"
 #include "HyCalModule.h"
+#include "ConfigParser.h"
 
 #if QT_VERSION >= 0x050000
 #include <QtWidgets>
@@ -179,17 +180,17 @@ void HyCalScene::drawHitsMark(QPainter *painter, const QPointF& pos, const HyCal
 }
 
 // pverloaded read module list
-void HyCalScene::ReadModuleList(const std::string &path)
+bool HyCalScene::ReadModuleList(const std::string &path)
 {
     if(path.empty())
-        return;
+        return false;
 
     ConfigParser c_parser;
     if(!c_parser.ReadFile(path)) {
         std::cerr << "PRad HyCal Detector Error: Failed to read module list file "
                   << "\"" << path << "\"."
                   << std::endl;
-        return;
+        return false;
     }
 
     // clear all modules
@@ -221,8 +222,10 @@ void HyCalScene::ReadModuleList(const std::string &path)
         addItem(module);
     }
 
-    // sort the module by id
-    SortModuleList();
+    // update sector information
+    InitLayout();
+
+    return true;
 }
 
 
@@ -306,14 +309,6 @@ void HyCalScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 void HyCalScene::ClearHitsMarks()
 {
     hitsMarkList.clear();
-}
-
-void HyCalScene::ShowCluster(int index)
-{
-    if((size_t)index >= module_clusters.size())
-        ModuleAction(&HyCalModule::ShowEnergy);
-
-    ShowCluster(module_clusters.at(index));
 }
 
 void HyCalScene::ShowCluster(const ModuleCluster &cluster)

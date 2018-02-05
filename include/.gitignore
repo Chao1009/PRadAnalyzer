@@ -1,0 +1,2 @@
+# header files will be linked to this folder after compilation, so ignore all files
+*

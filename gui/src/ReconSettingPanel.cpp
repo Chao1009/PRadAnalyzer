@@ -289,16 +289,16 @@ void ReconSettingPanel::ConnectCoordSystem(PRadCoordSystem *c)
     if(c == nullptr)
         return;
 
-    for(auto &it : c->GetCoordsData())
+    for(auto &rc : c->GetCoordsData())
     {
-        coordRun->addItem(QString::number(it.first));
+        coordRun->addItem(QString::number(rc.run_number));
     }
 
-    det_coords = c->GetCurrentCoords();
+    coords = c->GetCurrentCoords();
 
-    for(auto &coord : det_coords)
+    for(size_t i = 0; i < coords.dets.size(); ++i)
     {
-        coordType->addItem(PRadDetector::getName(coord.det_enum));
+        coordType->addItem(PRadDetector::getName(i));
     }
 
     coordType->setCurrentIndex(0);
@@ -332,9 +332,13 @@ void ReconSettingPanel::updateHyCalPath()
 // open the configuration file for selected method
 void ReconSettingPanel::openHyCalConfig()
 {
+    std::string dir = getenv("PRAD_PATH");
+    if(dir.size() && dir.back() != '/') dir += "/";
+    dir += "config/";
+
     QString path = QFileDialog::getOpenFileName(this,
                                                 "HyCal Cluster Configuration File",
-                                                "config/",
+                                                dir.c_str(),
                                                 "text config file (*.conf *.txt)");
 
     if(path.isEmpty())
@@ -366,11 +370,11 @@ void ReconSettingPanel::changeCoordType(int t)
         return;
     }
 
-    auto &coord = det_coords[t];
+    auto &coord = coords.dets[t];
 
     for(size_t i = 0; i < coordBox.size(); ++i)
     {
-        coordBox[i]->setValue(coord.get_dim_coord(i));
+        coordBox[i]->setValue(coord.GetCoord(i));
     }
 
 }
@@ -380,44 +384,53 @@ void ReconSettingPanel::selectCoordData(int r)
     if(r < 0 || coordSystem == nullptr)
         return;
 
-    coordSystem->ChooseCoord(r);
-    det_coords = coordSystem->GetCurrentCoords();
+    coordSystem->ChooseCoordAt(r);
+    coords = coordSystem->GetCurrentCoords();
     changeCoordType(coordType->currentIndex());
 }
 
 void ReconSettingPanel::saveCoordData()
 {
     size_t idx = (size_t)coordType->currentIndex();
-    if(idx >= det_coords.size())
+    if(idx >= coords.dets.size())
         return;
 
-    auto &coord = det_coords[idx];
+    auto &coord = coords.dets[idx];
 
     for(size_t i = 0; i < coordBox.size(); ++i)
     {
-        coord.set_dim_coord(i, coordBox[i]->value());
+        coord.SetCoord(i, coordBox[i]->value());
     }
+    coordSystem->SetCurrentCoord(coords);
 }
 
 void ReconSettingPanel::saveCoordFile()
 {
+    std::string dir = getenv("PRAD_PATH");
+    if(dir.size() && dir.back() != '/') dir += "/";
+    dir += "database/";
+
     QString path = QFileDialog::getSaveFileName(this,
                                                 "Coordinates File",
-                                                "config/",
+                                                dir.c_str(),
                                                 "text data file (*.dat *.txt)");
     if(path.isEmpty())
         return;
 
     saveCoordData();
-    coordSystem->SetCurrentCoord(det_coords);
+    coordSystem->SetCurrentCoord(coords);
     coordSystem->SaveCoordData(path.toStdString());
 }
 
 void ReconSettingPanel::openCoordFile()
 {
+    std::string dir = getenv("PRAD_PATH");
+    if(dir.size() && dir.back() != '/') dir += "/";
+    dir += "database/";
+
     QString path = QFileDialog::getOpenFileName(this,
                                                 "Coordinates File",
-                                                "config/",
+                                                dir.c_str(),
                                                 "text data file (*.dat *.txt)");
     if(path.isEmpty())
         return;
@@ -433,7 +446,7 @@ void ReconSettingPanel::restoreCoordData()
     if(coordSystem == nullptr)
         return;
 
-    det_coords = coordSystem->GetCurrentCoords();
+    coords = coordSystem->GetCurrentCoords();
     changeCoordType(coordType->currentIndex());
 }
 
@@ -484,7 +497,6 @@ void ReconSettingPanel::ApplyChanges()
     // set coordinate system
     if(coordSystem) {
         saveCoordData();
-        coordSystem->SetCurrentCoord(det_coords);
     }
 
     // set detector matching system

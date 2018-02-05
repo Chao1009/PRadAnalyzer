@@ -5,12 +5,13 @@
 // 01/27/2017                                                                 //
 //============================================================================//
 
-#include "cneural/CNeuralNetwork.h"
+#include "CNeuralNetwork.h"
 #include "cosmicEval.h"
 #include "PRadHyCalSystem.h"
 #include "PRadDataHandler.h"
 #include "PRadDSTParser.h"
 #include "PRadBenchMark.h"
+#include "ConfigOption.h"
 #include <iostream>
 #include <iomanip>
 #include <cstdlib>
@@ -35,107 +36,67 @@ void FillParams(PRadHyCalSystem &sys,
                 vector<vector<double>> &params,
                 unsigned int cap);
 
-void Helper(const string &mes = "")
-{
-    if(mes.size())
-        cerr << "error: " << mes << endl;
-
-    cout << "usage: " << endl
-         << setw(10) << " " << "neuralTrain <cosmic_data> <good_data>"
-         << endl
-         << "options:" << endl
-         << setw(10) << "-n " << "<file_path>: "
-         << "create network from file, a new network will be created by default."
-         << endl
-         << setw(10) << "-l " << "<\"value1, value2, ...\">: "
-         << "set the hidden layers for neural network, {20, 10, 5, 3} is the default value."
-         << endl
-         << setw(10) << "-s " << "<file_path>: "
-         << "set the path to save the trained network, save to \"saved.net\" by default "
-         << endl
-         << setw(10) << "-f " << "<value>: "
-         << "define learning factor, 0.1 is the default value."
-         << endl
-         << setw(10) << "-t " << "<value>: "
-         << "set the training times (1,000 as the unit), 5,000k is the default value."
-         << endl
-         << setw(10) << "-c " << "<value>: "
-         << "set the training bank capacity (1,000 as the unit), 1,000k is the default value."
-         << endl
-         << setw(10) << "-h " << ": "
-         << "see this helper information."
-         << endl;
-
-    exit(-1);
-}
-
 int main(int argc, char *argv[])
 {
-    string net_path, save_path, layer_str, argstr[2];
+    string net_path, save_path, layer_str;
     double learn_factor = 0.1;
-    int learn_times = 5000, cap = 1000, run_arg = 0;
+    int learn_times = 5000, cap = 1000;
 
     save_path = "saved.net";
 
-    for(int i = 1; i < argc; ++i)
+    ConfigOption conf_opt;
+    conf_opt.AddOpts(ConfigOption::arg_require, 'n', "net-path");
+    conf_opt.AddOpts(ConfigOption::arg_require, 's', "save-path");
+    conf_opt.AddOpts(ConfigOption::arg_require, 'l', "layer");
+    conf_opt.AddOpts(ConfigOption::arg_require, 'f', "learning-factor");
+    conf_opt.AddOpts(ConfigOption::arg_require, 't', "training-times");
+    conf_opt.AddOpts(ConfigOption::arg_require, 'c', "bank-capacity");
+    conf_opt.AddOpts(ConfigOption::help_message, 'h', "help");
+
+    conf_opt.SetDesc("neuralTrain <cosmic_data> <good_data>");
+    conf_opt.SetDesc('n', "create network from file, a new network will be created by default.");
+    conf_opt.SetDesc('l', "set the hidden layers for neural network in the format of \"val1, val2, ...\".");
+    conf_opt.SetDesc('s', "set the path to save the trained network, save to \"saved.net\" by default.");
+    conf_opt.SetDesc('f', "define learning factor, 0.1 is the default value.");
+    conf_opt.SetDesc('t', "set the training times (1,000 as the unit), 5,000k is the default value.");
+    conf_opt.SetDesc('c', "set the training bank capacity (1,000 as the unit), 1,000k is the default value.");
+    conf_opt.SetDesc('h', "show instruction.");
+
+    if(!conf_opt.ParseArgs(argc, argv) || conf_opt.NbofArgs() != 2) {
+        std::cout << conf_opt.GetInstruction() << std::endl;
+        return -1;
+    }
+
+    for(auto &opt : conf_opt.GetOptions())
     {
-        char* ptr = argv[i];
-        if(*(ptr++) == '-')
+        switch(opt.mark)
         {
-            string option;
-            option += *(ptr++);
-
-            switch(option.at(0))
-            {
-            case 'n':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                net_path = argv[++i];
-                break;
-            case 's':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                save_path = argv[++i];
-                break;
-            case 'f':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                learn_factor = strtod(argv[++i], nullptr);
-                break;
-            case 't':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                learn_times = atoi(argv[++i]);
-                break;
-            case 'c':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                cap = atoi(argv[++i]);
-                break;
-            case 'l':
-                if(i >= argc - 1)
-                    Helper("incorrect format for option " + option);
-                layer_str = argv[++i];
-                break;
-            case 'h':
-            default:
-                Helper("unknown option " + option);
-            }
-        }
-        else
-        {
-            if(run_arg < 2)
-                argstr[run_arg] = argv[i];
-            run_arg++;
+        case 'n':
+            net_path = opt.var.String();
+            break;
+        case 's':
+            save_path = opt.var.String();
+            break;
+        case 'f':
+            learn_factor = opt.var.Double();
+            break;
+        case 't':
+            learn_times = opt.var.Int();
+            break;
+        case 'c':
+            cap = opt.var.Int();
+            break;
+        case 'l':
+            layer_str = opt.var.String();
+            break;
+        default:
+            std::cout << conf_opt.GetInstruction() << std::endl;
+            return -1;
         }
     }
 
-    if(run_arg != 2) {
-        Helper("unmatched number of inputs, exepcting 2.");
-    }
-
-    string cosmic_file = argstr[0];
-    string good_file = argstr[1];
+    string cosmic_file = conf_opt.GetArgument(0).String();
+    string good_file = conf_opt.GetArgument(1).String();
     CNeuralNetwork my_net(learn_factor);
 
     vector<unsigned int> hidden;
@@ -275,7 +236,7 @@ void FillParams(PRadHyCalSystem &sys,
     {
         if(dst.EventType() == PRadDSTParser::Type::event)
         {
-            auto &event = dst.GetEvent();
+            auto event = dst.GetEvent();
 
             if(!event.is_physics_event())
                 continue;

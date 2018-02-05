@@ -90,7 +90,6 @@ void FillMollerEvents(const string &dst_path, MollerData &data)
     PRadGEMSystem *gem = new PRadGEMSystem("config/gem.conf");
 
     PRadDSTParser *dst_parser = new PRadDSTParser();
-    dst_parser->EnableMode(PRadDSTParser::Mode::update_run_info);
     // coordinate system and detector match system
     PRadCoordSystem *coord_sys = new PRadCoordSystem("database/coordinates.dat");
     PRadDetMatch *det_match = new PRadDetMatch("config/det_match.conf");
@@ -167,7 +166,7 @@ void FillMollerEvents(const string &dst_path, MollerData &data)
 
         } else if(dst_parser->EventType() == PRadDSTParser::Type::epics) {
             // save epics into handler, otherwise get epicsvalue won't work
-            epics->AddEvent(dst_parser->GetEPICSEvent());
+            epics->AddEvent(dst_parser->GetEPICS());
             beam_energy = epics->GetValue("MBSY2C_energy");
         }
     }

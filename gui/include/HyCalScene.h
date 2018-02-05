@@ -91,7 +91,6 @@ public:
     void UpdateScalerBox(const QStringList &texts);
     void ShowScalers(const bool &s = true) {showScalers = s;}
     void ShowCluster(const ModuleCluster &cluster);
-    void ShowCluster(int index);
     template<typename... Args>
     void ModuleAction(void (HyCalModule::*act)(Args...), Args&&... args)
     {
@@ -99,7 +98,7 @@ public:
             (((HyCalModule*)module)->*act)(std::forward<Args>(args)...);
     }
     // overloaded
-    void ReadModuleList(const std::string &path);
+    bool ReadModuleList(const std::string &path);
 
 protected:
     void drawForeground(QPainter *painter, const QRectF &rect);

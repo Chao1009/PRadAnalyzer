@@ -14,6 +14,7 @@
 #include "PRadInfoCenter.h"
 #include "PRadEvioParser.h"
 #include "PRadBenchMark.h"
+#include "ConfigOption.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -21,47 +22,54 @@
 
 using namespace std;
 
-void print_instruction()
-{
-    cout << "usage: " << endl
-         << setw(10) << "-i : " << "input file path" << endl
-         << setw(10) << "-o : " << "output file path" << endl
-         << setw(10) << "-h : " << "show options" << endl
-         << endl;
-}
-
 int main(int argc, char * argv[])
 {
-    if(argc < 2) {
-        print_instruction();
-        return 0;
+    ConfigOption conf_opt;
+    conf_opt.AddOpt(ConfigOption::arg_require, 's');
+    conf_opt.AddLongOpt(ConfigOption::arg_none, "init-evio", 'e');
+    conf_opt.AddLongOpt(ConfigOption::arg_none, "init-database", 'd');
+    conf_opt.AddOpt(ConfigOption::arg_require, 'r');
+    conf_opt.AddOpt(ConfigOption::help_message, 'h');
+
+    conf_opt.SetDesc("usage: replay <in_file> <out_file>");
+    conf_opt.SetDesc('s', "spliting file number, default -1 (no splitting).");
+    conf_opt.SetDesc('r', "set run number, only valid for --init-database, default -1 (determined from file name).");
+    conf_opt.SetDesc('e', "initialize from evio.0 file");
+    conf_opt.SetDesc('d', "initialize from database");
+    conf_opt.SetDesc('h', "show instruction.");
+
+    if(!conf_opt.ParseArgs(argc, argv) || conf_opt.NbofArgs() != 2) {
+        std::cout << conf_opt.GetInstruction() << std::endl;
+        return -1;
     }
 
-    char *ptr;
-    string output, input;
+    bool evio_database = true;
 
-    // -i input_file -o output_file
-    for(int i = 1; i < argc; ++i)
+    int split = -1, run = -1;
+    for(auto &opt : conf_opt.GetOptions())
     {
-        ptr = argv[i];
-        if(*(ptr++) == '-') {
-            switch(*(ptr++))
-            {
-            case 'o':
-                output = argv[++i];
-                break;
-            case 'i':
-                input = argv[++i];
-                break;
-            case 'h':
-                print_instruction();
-                break;
-            default:
-                cout << "Unkown option! check with -h" << endl;
-                exit(1);
-            }
+        switch(opt.mark)
+        {
+        case 's':
+            split = opt.var.Int();
+            break;
+        case 'e':
+            evio_database = true;
+            break;
+        case 'd':
+            evio_database = false;
+            break;
+        case 'r':
+            run = opt.var.Int();
+            break;
+        default:
+            std::cout << conf_opt.GetInstruction() << std::endl;
+            return -1;
         }
     }
+
+    string input = conf_opt.GetArgument(0).String();
+    string output = conf_opt.GetArgument(1).String();
 
     PRadDataHandler *handler = new PRadDataHandler();
     PRadEPICSystem *epics = new PRadEPICSystem("config/epics_channels.conf");
@@ -75,24 +83,21 @@ int main(int argc, char * argv[])
     handler->SetGEMSystem(gem);
 
     PRadBenchMark timer;
-//    handler->ReadFromDST("/work/hallb/prad/replay/prad_001292.dst");
-//    handler->ReadFromDST("prad_1292.dst");
-//    handler->ReadFromEvio("/work/prad/xbai/1323/prad_001323.evio.1");
-//    handler->ReadFromSplitEvio("/work/prad/xbai/1323/prad_001323.evio", 10);
-    handler->InitializeByData(input+".0");
-    handler->Replay(input, 1500, output);
-//    handler->GetSRS()->SavePedestal("gem_ped.txt");
+    if(evio_database) {
+        handler->InitializeByData(input + ".0");
+    } else {
+        if(run < 0)
+            hycal->ChooseRun(input);
+        else
+            hycal->ChooseRun(run);
+    }
+    handler->Replay(input, split, output);
 
 
     cout << "TIMER: Finished, took " << timer.GetElapsedTime() << " ms" << endl;
-    cout << "Read " << handler->GetEventCount() << " events and "
-         << epics->GetEventCount() << " EPICS events from file."
-         << endl;
     cout << PRadInfoCenter::GetBeamCharge() << endl;
     cout << PRadInfoCenter::GetLiveTime() << endl;
 
-//    handler->WriteToDST("prad_001323_0-10.dst");
-    //handler->PrintOutEPICS();
     return 0;
 }
 
